@@ -1,181 +1,224 @@
-import os
-import sys
+from collections import defaultdict
 import timeit
-import re
-import string
-import nltk
 import xml.sax
-from collections import *
+from unidecode import unidecode
+import sys
+import re
+import Stemmer
 import heapq
-from tqdm import tqdm
+import operator
+import os
+import pdb
 import threading
+from tqdm import tqdm
 
-# All the global variables used in the code
-dictionary={}
-pages=0
-files=0
-inverted_index=defaultdict(list)
-offset=0
-
-# All the stopwords are listed below and are taken from list of stopwords in nltk
-stopwords=set(["a", "about", "above", "above", "across", "after", "afterwards", "again", "against",
- "all", "almost", "alone", "along", "already", "also","although","always","am","among",
-  "amongst", "amoungst", "amount",  "an", "and", "another", "any","anyhow","anyone","anything",
-  "anyway", "anywhere", "are", "around", "as",  "at", "back","be","became", "because","become","becomes", 
-  "becoming", "been", "before", "beforehand", "behind", "being", "below", "beside", "besides", "between", "beyond",
-   "bill", "both", "bottom","but", "by", "call", "can", "cannot", "cant", "co", "con", "could", "couldnt", "cry", "de",
-    "describe", "detail", "do", "done", "down","due", "during", "each", "eg", "eight", "either", "eleven","else", "elsewhere", 
-    "empty", "enough", "etc", "even", "ever", "every", "everyone", "everything", "everywhere", "except", "few", "fifteen", 
-    "fify", "fill", "find", "fire", "first", "five", "for", "former", "formerly", "forty", "found", "four", "from", "front", "full", 
-    "further", "get", "give", "go", "had", "has", "hasnt", "have", "he", "hence", "her", "here", "hereafter", "hereby", "herein", 
-    "hereupon", "hers", "herself", "him", "himself", "his", "how", "however", "hundred", "ie", "if", "in", "inc", "indeed", "interest", 
-    "into", "is", "it", "its", "itself", "keep", "last", "latter", "latterly", "least", "less", "ltd", "made", "many", "may", "me", "meanwhile", 
-    "might", "mill", "mine", "more", "moreover", "most", "mostly", "move", "much", "must", "my", "myself", "name", "namely", "neither",
-     "never", "nevertheless", "next", "nine", "no", "nobody", "none", "noone", "nor", "not", "nothing", "now", "nowhere", "of", "off", "often",
-    "on", "once", "one", "only", "onto", "or", "other", "others", "otherwise", "our", "ours", "ourselves", "out", "over", "own","part", "per", 
-    "perhaps", "please", "put", "rather", "re", "same", "see", "seem", "seemed", "seeming", "seems", "serious", "several", "she", "should", "show",
-    "side", "since", "sincere", "six", "sixty", "so", "some", "somehow", "someone", "something", "sometime", "sometimes", "somewhere", "still", 
-    "such", "system", "take", "ten", "than", "that", "the", "their", "them", "themselves", "then", "thence", "there", "thereafter", "thereby", "therefore", 
-    "therein", "thereupon", "these", "they", "thick", "thin", "third", "this", "those", "though", "three", "through", "throughout", "thru", "thus", "to", 
-    "together", "too", "top", "toward", "towards", "twelve", "twenty", "two", "un", "under", "until", "up", "upon", "us", "very", "via", "was", "we",
-     "well", "were", "what", "whatever", "when", "whence", "whenever", "where", "whereafter", "whereas", "whereby", "wherein", "whereupon", 
-     "wherever", "whether", "which", "while", "whither", "who", "whoever", "whole", "whom", "whose", "why", "will", "with", "within", "without",
-      "would", "yet", "you", "your", "yours", "yourself", "yourselves"])
-
-
-
-# Text Preprocessing Steps
-# ********************************************************************************************#
-
-
-# I am not using Stemmer for time benefits as using Stemmer was consuming a lot of time.
-#  If you want to use kindly uncomment the below lines
-
-#from nltk.stem.porter import *   
-#ps=PorterStemmer() 
-# Function module to do stemming
-# def stemming(content):
-#     content=[ps.stem(word) for word in content]
-#     return content
-
-
-
-# Function Module to do Tokenization
-# 1) Removing special characters from text
-# 2) Removing URLs from text
-# 3) Removing Html elements from text
+def remove_special(text):
+	text = re.sub(r'[^A-Za-z0-9]+', r' ', text) #Remove Special Characters
+	return text
+##### Tokenization
 def tokenize(text):
-    text=text.encode("ascii", errors="ignore").decode()
-    # removing special characters
-    text = re.sub(r'[^A-Za-z0-9]+', r' ', text)
-    # removing urls
-    text=re.sub(r'http[^\ ]*\ ', r' ', text) 
-    # removing html entities
-    text = re.sub(r'&nbsp;|&lt;|&gt;|&amp;|&quot;|&apos;', r' ', text) 
-    text=text.split() # Dividing into words
-    return text
+    text = text.encode("ascii", errors="ignore").decode()
+    text = remove_special(text)
+    return text.split()
+##### Stop Words Removal
+def rem_stopwords(text):
+    return [word for word in text if stop_dict[word] != 1 ]
+##### Stemming
+def stem(text):
+	return stemmer.stemWords(text)
+    #return [stemmer.stem(word) for word in text]
+##### Process Text using regex
+def processText(text, title):
+    #### References , Links, Categories below references & info,body, tilte above references.
+    st1 = "== references == "
+    st2 = "==references=="
+    text = text.lower() #Case Folding
+    temp = text.split(st1)
+    x=1
+    if len(temp) == x:
+        temp = text.split('st2')
+    if len(temp) == x: # If empty then initialize with empty lists
+        links = []
+        categories = []
+    else: 
+        categories = process_categories(temp[1])
+        links = process_links(temp[1])
+    body = process_body(temp[0])
+    title= title.lower()
+    title = process_title(title)
+    info = process_info(temp[0])
+    return title, body, info, categories, links
 
-# Function module to remove stop-words
-def StopWords_removal(content):
-    content_modified=[]
-    for word in content:
-        if word not in stopwords:
-            content_modified.append(word)
-    return content_modified
+def process_title(text):
+    data = tokenize(text)
+    data = rem_stopwords(data)
+    data = stem(data)
+    return data
 
-#**********************************************************************************************#
+def process_body(text):
+    data = re.sub(r'\{\{.*\}\}', r' ', text)
+    data = tokenize(data)
+    data = rem_stopwords(data)
+    data = stem(data)
+    return data
 
-# Function Modules to extract Titles, references,categories,Body,InfoBox and Links
-
-  #  EXTRACTING THE TITLE
-def  extractTitle(title):
-  
-    title=title.lower() #Case Folding for the title
-    title=tokenize(title)
-    title=StopWords_removal(title)
-    # title=stemming(title) # Uncomment it if you want to include stemming in your preprocessing steps
-    return title
-
-# Extracting Body
-def extractBody(text):
-    text=text.lower()
-    temp = re.sub(r'\{\{.*\}\}', r' ', text)
-    body=tokenize(temp)
-    body=StopWords_removal(body)
-    # body=stemming(body)
-    return body
-
- # EXTRACTING INFO
-def extractInfo(text):
-    text=text.lower()
-    content_splitted=text.split('\n')
-    flag=False
-    info=[]
-   
-    for word in content_splitted:
-        if re.match(r'\{\{infobox', word):
-            temp=re.sub(r'\{\{infobox(.*)', r'\1',word)
-            info.append(temp)
-            flag=True
-        elif flag== True:
-            if word == "}}":
-                flag= False
+def process_info(text):
+    data = text.split('\n')
+    fl = -1
+    info = []
+    st="}}"
+    for line in data:
+        if re.match(r'\{\{infobox', line):
+            info.append(re.sub(r'\{\{infobox(.*)', r'\1', line))
+            fl = 0
+        elif fl == 0:
+            if line == st:
+                fl = -1
                 continue
-            info.append(word)
-    info = tokenize(' '.join(info))
-    info = StopWords_removal(info)
-    # info=stemming(info)
-    return info
+            info.append(line)
+    data = tokenize(' '.join(info))
+    data = rem_stopwords(data)
+    data = stem(data)
+    return data
 
-
-# EXTRACTING REFERENCES
-def extractReferences(text):
-    content_splitted = text.split('\n')
-    references= []
-    for word in content_splitted:
-            if re.search(r'<ref', word):
-                references.append(re.sub(r'.*title[\ ]*=[\ ]*([^\|]*).*', r'\1', word))
-
-    references=tokenize(' '.join(references))
-    references=StopWords_removal(references)
-    # references=stemming(references)
-    return references
-
-
-#EXTRACTING LINKS
-def extractLinks(text):
-    content_splitted = text.split('\n')
-    links = []
-    for word in content_splitted:
-            if re.match(r'\*[\ ]*\[', word):
-                links.append(word)
-        
-    links = tokenize(' '.join(links))
-    links = StopWords_removal(links)
-    # links=stemming(links)
-    return links
-
- #EXTRACTING CATEGORIES
-def extractCategories(text):
-    content_splitted=text.split('\n')
+def process_categories(text):
+    data = text.split('\n')
     categories = []
-    for word in content_splitted:
-        if re.match(r'\[\[category', word):
-            temp=re.sub(r'\[\[category:(.*)\]\]', r'\1',word)
-            categories.append(temp)
-        
-    categories=tokenize(' '.join(categories))
-    categories=StopWords_removal(categories)
-    # categories=stemming(categories)
-    return categories
+    for line in data:
+        if re.match(r'\[\[category', line):
+            categories.append(re.sub(r'\[\[category:(.*)\]\]', r'\1', line))
+    data = tokenize(' '.join(categories))
+    data = rem_stopwords(data)
+    data = stem(data)
+    return data
 
-#*************************************************************************************#
+def process_links(text):
+    data = text.split('\n')
+    links = []
+    for line in data:
+        if re.match(r'\*[\ ]*\[', line):
+            links.append(line)
+    data = tokenize(' '.join(links))
+    data = rem_stopwords(data)
+    data = stem(data)
+    return data
 
+def Indexer(title, body, info, categories, links):
+    global p_cnt
+    global PostList
+    global docID
+    global f_cnt
+    global offset
+    ID = p_cnt
+    words={}
+    d={}
+    for word in links:
+        if(d.get(word)==None):
+            d[word]=1
+        else:
+            d[word]+=1
+        if(words.get(word)==None):
+            words[word]=1
+        else:
+            words[word]+=1
+    links = d
+    d = {} # Local Vocabulary
+    for word in title:
+        if(d.get(word)==None):
+            d[word]=1
+        else:
+            d[word]+=1
+        if(words.get(word)==None):
+            words[word]=1
+        else:
+            words[word]+=1
+    title = d
+    d = {}
+    for word in info:
+        if(d.get(word)==None):
+            d[word]=1
+        else:
+            d[word]+=1
+        if(words.get(word)==None):
+            words[word]=1
+        else:
+            words[word]+=1
+    info = d
+    d = {}
+    for word in body:
+        if(d.get(word)==None):
+            d[word]=1
+        else:
+            d[word]+=1
+        if(words.get(word)==None):
+            words[word]=1
+        else:
+            words[word]+=1
+    body = d
+    d = {}
+    for word in categories:
+        if(d.get(word)==None):
+            d[word]=1
+        else:
+            d[word]+=1
+        if(words.get(word)==None):
+            words[word]=1
+        else:
+            words[word]+=1
+    categories = d 
+    for word,key in words.items():
+    	string ='d'+(str(ID))
+    	if(title.get(word)):
+    		string += 't' + str(title[word])
+    	if(body.get(word)):
+    		string += 'b' + str(body[word])
+    	if(info.get(word)):
+    		string += 'i' + str(info[word])
+    	if(categories.get(word)):
+    		string += 'c' + str(categories[word])
+    	if(links.get(word)):
+    		string += 'l' + str(links[word])
+    	PostList[word].append(string)
+    p_cnt += 1
+    tem_var = p_cnt%20000
+    if tem_var == 0 :
+    	offset = writeinfile(PostList, docID, f_cnt , offset)
+    	PostList = defaultdict(list)
+    	docID = {}
+    	f_cnt = f_cnt + 1
 
-
-
-
-
+def writeinfile(PostList, docID, f_cnt , offset):	
+    d_offset = []    
+    data = []
+    p_offset = offset
+    for key in sorted(docID):
+        temp = str(key) + ' ' + docID[key].strip()
+        size_1=len(temp)
+        if(size_1>0):
+            p_offset = 1 + p_offset + size_1
+        else:
+            p_offset = 1 + p_offset
+        data.append(temp)
+        d_offset.append(str(p_offset))
+    f_name = './files/titleOffset.txt'
+    with open(f_name, 'a') as f:
+        f.write('\n'.join(d_offset))
+        f.write('\n')
+    f_name = './files/title.txt'
+    with open(f_name, 'a') as f:
+        f.write('\n'.join(data))
+        f.write('\n')
+    data = []
+    for key in sorted(PostList.keys()):
+        postings = PostList[key]
+        string = key + ' '
+        string = string + ' '.join(postings)
+        data.append(string)
+    file_name = './files/index' 
+    f_name = file_name + str(f_cnt) + '.txt'
+    with open(f_name, 'w') as f:
+        f.write('\n'.join(data))
+    return p_offset
 
 class writeThread(threading.Thread):
     def __init__(self, field, data, offset, count):
@@ -185,185 +228,73 @@ class writeThread(threading.Thread):
         self.data = data
         self.count = count
     def run(self):
-        
-        f_name =  './files/' + self.field + str(self.count) + '.txt'
+        st_fl=str(self.count)
+        file_name = './files/' 
+        f_name = file_name + self.field + st_fl + '.txt'
         with open(f_name, 'w') as f:
             f.write('\n'.join(self.data))
-        f_name = './files/supu' +self.field + str(self.count)+ '.txt'
+        file_name = './files/offset_'     
+        f_name = file_name + self.field + st_fl + '.txt'
         with open(f_name, 'w') as f:
             f.write('\n'.join(self.offset))
 
-
-
-
-
-
-
-
-
-# Writing into file
-def writeIntoFile(inverted_index, files,dictionary,offset):
-    data_offset = []    
-    data = []
-    previous_offset = offset
-    for key in sorted(dictionary):
-        temp = str(key) + ' ' + dictionary[key].strip()
-        size_of_temp=len(temp)
-        if(size_of_temp):
-            previous_offset = 1 + previous_offset + size_of_temp
-        else:
-            previous_offset = 1 + previous_offset
-        data.append(temp)
-        data_offset.append(str(previous_offset))
-    f_name = './files/titleOffset.txt'
-    try:
-        with open(f_name, 'a') as f:
-            f.write('\n'.join(data_offset))
-            f.write('\n')
-    except:
-        os.mkdir('files')
-        with open(f_name, 'a') as f:
-            f.write('\n'.join(data_offset))
-            f.write('\n')
-    f_name = './files/title.txt'
-    with open(f_name, 'a') as f:
-        f.write('\n'.join(data))
-        f.write('\n')
-
-    data = []
-    for key in sorted(inverted_index.keys()):
-        postings = inverted_index[key]
-        string = key + ' '
-        string = string + ' '.join(postings)
-        data.append(string)
-    file_name = './files/inverted_index' 
-    f_name = file_name + str(files) + '.txt'
-    with open(f_name, 'w') as f:
-        f.write('\n'.join(data))
-    return previous_offset
-
-
-
-
-
-
-
-
-
-def finalWrite(data,finalCount,offsetSize):
-    offset=[]
-    title=defaultdict(dict)
-    body=defaultdict(dict)
-    info=defaultdict(dict)
-    category=defaultdict(dict)
-    link=defaultdict(dict)
-    references=defaultdict(dict)
-
-    distinctWords=[]
-
-# tqdm is used to show the progress box. Just there for aesthetic purposes
+def final_write(data, finalCount, offsetSize):
+    offset = []
+    distinctWords = []
+    title = defaultdict(dict)
+    link = defaultdict(dict)
+    info = defaultdict(dict)
+    category = defaultdict(dict)
+    body = defaultdict(dict)
     for key in tqdm(sorted(data.keys())):
-        documents=data[key]
-        for i in range(len(documents)):
-            posting=documents[i]
-            documentID = re.sub(r'.*d([0-9]*).*', r'\1', posting)
+        temp = []
+        docs = data[key]
+        i=0
+        si=len(docs)
+        while(i<si):
+            posting = docs[i]
             temp = re.sub(r'.*c([0-9]*).*', r'\1', posting)
-            if len(temp)>0 and posting!=temp:
-                category[key][documentID] = float(temp)
-            
+            docID = re.sub(r'.*d([0-9]*).*', r'\1', posting)
+            siz=len(temp)
+            if siz>0 and posting != temp:
+                category[key][docID] = float(temp)
             temp = re.sub(r'.*i([0-9]*).*', r'\1', posting)
-            if len(temp)>0 and posting != temp:
-                info[key][documentID] = float(temp)
-            
+            siz=len(temp)
+            if siz>0 and posting != temp:
+                info[key][docID] = float(temp)
             temp = re.sub(r'.*l([0-9]*).*', r'\1', posting)
-            if len(temp)>0 and posting != temp:
-                link[key][documentID] = float(temp)
-            
+            siz=len(temp)
+            if siz > 0 and posting != temp:
+                link[key][docID] = float(temp)
             temp = re.sub(r'.*b([0-9]*).*', r'\1', posting)
-            if len(temp)>0 and posting != temp:
-                body[key][documentID] = float(temp)
-            
+            siz=len(temp)
+            if siz>0 and posting != temp:
+                body[key][docID] = float(temp)
             temp = re.sub(r'.*t([0-9]*).*', r'\1', posting)
-            if len(temp)>0 and posting != temp:
-                title[key][documentID] = float(temp)
-            
-            temp = re.sub(r'.*r([0-9]*).*', r'\1', posting)
-            if len(temp)>0 and posting != temp:
-                references[key][documentID] = float(temp)
-            
-            
-        string = key+' '+str(finalCount)+' '+str(len(documents))
+            siz=len(temp)
+            if siz >0 and posting != temp:
+                title[key][docID] = float(temp)
+            i+=1
+        string = key + ' ' + str(finalCount) + ' ' + str(len(docs))
         offset.append(str(offsetSize))
-        offsetSize+=len(string)+1
+        offsetSize += len(string) + 1
         distinctWords.append(string)
-    
-
-    titleData=[]
-    titleOffset=[]
-    prevTitle=0
-
-    bodyData = []
-    bodyOffset = []
-    prevBody = 0
-
-    infoData = []
-    infoOffset = []
-    prevInfo = 0
-
     categoryData = []
     categoryOffset = []
     prevCategory = 0
-    
+    bodyData = []
+    bodyOffset = []
+    prevBody = 0
     linkData = []
     linkOffset = []
     prevLink = 0
-
-    referencesData=[]
-    referencesOffset=[]
-    prevReferences=0
-
+    infoData = []
+    infoOffset = []
+    prevInfo = 0
+    titleData = []
+    titleOffset = []
+    prevTitle = 0
     for key in tqdm(sorted(data.keys())):
-        if key in title:
-            docs=title[key]
-            docs=sorted(docs,key= docs.get, reverse= True)
-            string=key+' '
-            for doc in docs:
-                string+=doc+' '+str(title[key][doc])+' '
-            titleData.append(string)
-            titleOffset.append(str(prevTitle) + ' ' + str(len(docs)))
-            prevTitle += len(string) + 1
-        
-        if key in body:
-            docs = body[key]
-            docs = sorted(docs, key = docs.get, reverse=True)
-            string = key + ' '
-            for doc in docs:
-                string += doc + ' ' + str(body[key][doc]) + ' '
-            bodyData.append(string)
-            bodyOffset.append(str(prevBody) + ' ' + str(len(docs)))
-            prevBody += len(string) + 1
-        
-        if key in info:
-            docs = info[key]
-            docs = sorted(docs, key = docs.get, reverse=True)
-            string = key + ' '
-            for doc in docs:
-                string += doc + ' ' + str(info[key][doc]) + ' '
-            infoData.append(string)
-            infoOffset.append(str(prevInfo) + ' ' + str(len(docs)))
-            prevInfo += len(string) + 1
-
-        if key in category:
-            docs = category[key]
-            docs = sorted(docs, key = docs.get, reverse=True)
-            string = key + ' '
-            for doc in docs:
-                string += doc + ' ' + str(category[key][doc]) + ' '
-            categoryData.append(string)
-            categoryOffset.append(str(prevCategory) + ' ' + str(len(docs)))
-            prevCategory += len(string) + 1
-        
-
         if key in link:
             docs = link[key]
             docs = sorted(docs, key = docs.get, reverse=True)
@@ -373,30 +304,50 @@ def finalWrite(data,finalCount,offsetSize):
             linkData.append(string)
             linkOffset.append(str(prevLink) + ' ' + str(len(docs)))
             prevLink = prevLink + len(string) + 1
-        
-
-        if key in references:
-            docs = references[key]
+        if key in info:
+            docs = info[key]
             docs = sorted(docs, key = docs.get, reverse=True)
             string = key + ' '
             for doc in docs:
-                string += doc + ' ' + str(references[key][doc]) + ' '
-
-            referencesData.append(string)
-            referencesOffset.append(str(prevReferences) + ' ' + str(len(docs)))
-            prevReferences += len(string) + 1
-        
-
-    thread=[]
-    thread.append(writeThread('t', titleData, titleOffset, final_count))
-    thread.append(writeThread('b', bodyData, bodyOffset, final_count))
-    thread.append(writeThread('i', infoData, infoOffset, final_count))
-    thread.append(writeThread('c', categoryData, categoryOffset, final_count))
-    thread.append(writeThread('l', linkData, linkOffset, final_count))
-    thread.append(writeThread('r', referencesData, referencesOffset, final_count))
-
+                string += doc + ' ' + str(info[key][doc]) + ' '
+            infoData.append(string)
+            infoOffset.append(str(prevInfo) + ' ' + str(len(docs)))
+            prevInfo += len(string) + 1
+        if key in body:
+            docs = body[key]
+            docs = sorted(docs, key = docs.get, reverse=True)
+            string = key + ' '
+            for doc in docs:
+                string += doc + ' ' + str(body[key][doc]) + ' '
+            bodyData.append(string)
+            bodyOffset.append(str(prevBody) + ' ' + str(len(docs)))
+            prevBody += len(string) + 1
+        if key in category:
+            docs = category[key]
+            docs = sorted(docs, key = docs.get, reverse=True)
+            string = key + ' '
+            for doc in docs:
+                string += doc + ' ' + str(category[key][doc]) + ' '
+            categoryData.append(string)
+            categoryOffset.append(str(prevCategory) + ' ' + str(len(docs)))
+            prevCategory += len(string) + 1
+        if key in title:
+            docs = title[key]
+            docs = sorted(docs, key = docs.get, reverse=True)
+            string = key + ' '
+            for doc in docs:
+                string += doc + ' ' + str(title[key][doc]) + ' '
+            titleData.append(string)
+            titleOffset.append(str(prevTitle) + ' ' + str(len(docs)))
+            prevTitle += len(string) + 1
+    thread = []
+    thread.append(writeThread('t', titleData, titleOffset, finalCount))
+    thread.append(writeThread('b', bodyData, bodyOffset, finalCount))
+    thread.append(writeThread('i', infoData, infoOffset, finalCount))
+    thread.append(writeThread('c', categoryData, categoryOffset, finalCount))
+    thread.append(writeThread('l', linkData, linkOffset, finalCount))
     i=0
-    total=6
+    total=5
     while(i<total):
         thread[i].start()
         i+=1
@@ -412,328 +363,124 @@ def finalWrite(data,finalCount,offsetSize):
     with open(file_name, 'a') as f:
         f.write('\n'.join(distinctWords))
         f.write('\n')
-    return offsetSize ,finalCount+1
+    return offsetSize , finalCount+1
+  
+def mergefiles(fileCount):
+    flag = [0] * fileCount
+    words = {}
+    heap = []
+    finalCount,offsetSize = 0,0
+    files = {}
+    top = {}
+    data = defaultdict(list)
+    i=0
+    while i < fileCount:
+        file_na = './files/index'
+        f_name = file_na + str(i) + '.txt'
+        files[i] = open(f_name, 'r')
+        top[i] = files[i].readline().strip()
+        words[i] = top[i].split()
+        x = words[i][0]
+        if x not in heap:
+            heapq.heappush(heap,x)
+        flag[i] = 1
+        i=i+1
+    count = 0
+    while any(flag) == 1:
+        temp = heapq.heappop(heap)
+        count = count + 1
+        tem_val = count%100000
+        if tem_val == 0:
+            oldFileCount = finalCount
+            offsetSize,finalCount = final_write(data, finalCount, offsetSize)
+            if finalCount != oldFileCount :
+                data = defaultdict(list)
+        i=0
+        while i < fileCount:
+            if flag[i]:
+                if temp == words[i][0] :
+                    top[i] = files[i].readline().strip()
+                    data[temp].extend(words[i][1:])
+                    if top[i]!='':
+                        words[i] = top[i].split()
+                        if words[i][0] not in heap:
+                            heapq.heappush(heap, words[i][0])
+                    else:
+                        flag[i] = 0
+                        files[i].close()       
+            i+=1            
+    offsetSize,finalCount = final_write(data, finalCount, offsetSize)
 
-        
-
-
-
-
-            
-
-
-
-
-
-
-
-#*************************************************************************************#
-
-#**************************************************************************************#
-# CREATING A DICTIONARY OF KEYS AS TITLE,BODY,INFO etc. TOKENS AND 
-# THEIR FREQUENCIES AS DICTIONARY VALUES
-
-def creating_dictionary(title, body, info, categories,links,references):
-    words=defaultdict(int)
-    title_dict=defaultdict(int)
-    try:
-        for word in title:
-            title_dict[word]+=1
-            words[word]+=1
-    except:
-        pass
+def file_handler(index, docID, out_path):
+    data = []
+    for key in sorted(index.keys()):
+        string = key + ' '
+        postings = index[key]
+        string += ' '.join(postings)
+        data.append(string)
+    file_input = out_path 
+    with open(file_input, 'w') as f:
+        f.write('\n'.join(data))
     
-    
-    body_dict=defaultdict(int)
-    try:
-        for word in body:
-            body_dict[word]+=1
-            words[word]+=1
-    except:
-        pass
-    
-    info_dict=defaultdict(int)
-    try:
-        for word in info:
-            info_dict[word]+=1
-            words[word]+=1
-    except:
-        pass
-    
-    categories_dict=defaultdict(int)
-    try:
-        for word in categories:
-            categories_dict[word]+=1
-            words[word]+=1
-    except:
-        pass
-
-    links_dict=defaultdict(int)
-    try:
-        for word in links:
-            links_dict[word]+=1
-            words[word]+=1
-    except:
-        pass
-    
-    references_dict=defaultdict(int)
-    try:
-        for word in references:
-            references_dict[word]+=1
-            words[word]+=1
-    except:
-        pass
-    
-    
-    return title_dict, body_dict, info_dict, categories_dict,links_dict,references_dict,words
-
-
-
-def creating_inverted_index(title_dict, body_dict, info_dict, categories_dict,links_dict,references_dict,words):
-    global pages,files,inverted_index,offset,dictionary
-    ID=pages
-   
-  # posting format is id followed by page number with the delimiters t,b,l,i,r,c followed by the frequency of the word
-    
-    for word in words.keys():
-        string = 'id'+str(ID)
-         # t is the delimiter for titles
-        if title_dict[word]>0:
-            string += 't' + str(title_dict[word])
-            
-
-        
-        # b is the delimiter for body
-        if body_dict[word]>0:
-            string += 'b' + str(body_dict[word])
-            
-        #i is the delimiter for body
-        if info_dict[word]>0:
-            string += 'i' + str(info_dict[word])
-            
-        
-        # c is the delimiter for categories
-        if categories_dict[word]>0:
-            string += 'c' + str(categories_dict[word])
-            
-
-        # l is the delimiter for links
-        if links_dict[word]>0:
-            string += 'l' + str(links_dict[word])
-           
-
-        if references_dict[word]>0:
-            string += 'r' + str(references_dict[word])
-            
-        inverted_index[word].append(string)
-    pages=pages+1
-    #print(pages)
-
-    # This is to ensure that every file will have  20000 pages or less
-    if pages%20000 == 0:
-            offset = writeIntoFile(inverted_index, files,dictionary,offset)
-            inverted_index = defaultdict(list)
-            dictionary = {}
-            files += 1
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#*******************************************************************************************************************#
- #******************************************Merge Operation***********************************************************#
-
-def merge(files):
-    #This flags list is used to signify if the words in the file have been added into heap
-    flags=[0]*files 
-
-    # Below is the heap array
-    heap=[]
-
-    a_line_of_inverted_index={}
-
-    finalCount=0
-    offsetSize=0
-    file_pointers={}
-    line={}
-    data=defaultdict(list)
-    
-
-    # Pushing all the words in the inverted_indexes of all the files into min-Heap
-    for i in range(files):
-        f_name =  './files/inverted_index' + str(i) + '.txt'
-        file_pointers[i] = open(f_name, 'r')
-        # The first line of the file is now stored in the first_line dictionary
-        line[i]=file_pointers[i].readline().strip()
-        a_line_of_inverted_index[i]=line[i].split()
-
-        # a_line_of_inverted_index[i][0] contains the word and a_line_of_inverted_index[i][1] contains the postings
-        word=a_line_of_inverted_index[i][0]
-
-        if word not in heap:
-            heapq.heappush(heap,word)
-        flags[i]=1
-    
-    
-    count=0
-
-# To check if any line is not read in any file
-    while any(flags) == 1:
-        # Popping the lexicographically smallest word from the heap
-        temp_word=heapq.heappop(heap)
-        count+=1
-
-        # When the count of the words reach 100000 we are writing the data to file
-        if count%100000 == 0:
-            prevFileCount=finalCount
-            offsetSize,finalCount=finalWrite(data,finalCount,offsetSize)
-            if finalCount != prevFileCount:
-                data=defaultdict(list)
-            
-        
-        for i in range(files):
-            if flags[i]:
-                if temp_word == a_line_of_inverted_index[i][0]:
-                    line[i]=file_pointers[i].readline().strip()
-                    data[temp_word].extend(line[i][1:])
-
-                    if line[i]!='':
-                        a_line_of_inverted_index[i]=line[i].split()
-                        if a_line_of_inverted_index[i][0] not in heap:
-                            heapq.heappush(heap,a_line_of_inverted_index[i][0])
-                        else:
-                            flags[i]=0
-                            file_pointers[i].close()
-    
-    offsetSize,finalCount=finalWrite(data,finalCount,offsetSize)
-
-                
-
-
-
-
-
-
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-#******************************************SAX Parser  Module ********************************************************#
-class SAXHandler( xml.sax.ContentHandler ):
-    flag=0
+class Handle(xml.sax.ContentHandler):
     def __init__(self):
-        self.title = ""
-        self.ID = ""
-        self.text = ""
-        self.curr=""
-    
-    # Call when an element starts
+        self.title = ''
+        self.text = ''
+        self.data = ''
+        self.ID = ''
+        self.fl = 0
     def startElement(self, tag, attributes):
-        self.curr=tag
-    
-    # Call when a character is read
-    def characters(self, content):
-        if self.curr == "id" and SAXHandler.flag==0:
-            self.ID = content
-            SAXHandler.flag=1
-
-        elif self.curr == "text":
-            self.text =self.text+content
-        elif self.curr=="title":
-            self.title=self.title+content
-
-
-    # Call when an elements ends
+        self.data = tag   
     def endElement(self, tag):
-        if(tag=="page"):
-            dictionary[pages]=self.title.strip().encode("ascii", errors="ignore").decode()
+        if tag == 'page':
+            docID[p_cnt] = self.title.strip().encode("ascii", errors="ignore").decode()
+            title, body, info, categories, links = processText(self.text, self.title)
+            Indexer( title, body, info, categories, links)
+            self.data = ''
+            self.title = ''
+            self.text = ''
+            self.ID = ''
+            self.fl = 0
+            #print('Finished:',p_cnt)
+    def characters(self, content):
+        if self.data == 'title':
+            self.title = self.title + content
+        elif self.data == 'id' and self.fl == 0:
+            self.ID = content
+            self.fl = 1
+        elif self.data == 'text':
+            self.text += content
 
-            title=extractTitle(self.title)
+class Parser():
+    def __init__(self, file_input):
+        self.parser = xml.sax.make_parser()
+        self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
+        self.handler = Handle()
+        self.parser.setContentHandler(self.handler)
+        self.parser.parse(file_input)
 
-            temp_text = self.text.lower() #Case Folding
-            temp_text_split=temp_text.split('==references==')
-            if len(temp_text_split) == 1:
-                temp_text_split=temp_text.split('== references == ')
-
-            categories=[]
-            links=[]
-            references=[]
-            if(len(temp_text_split)>1):
-                categories=extractCategories(temp_text_split[1])
-                links=extractLinks(temp_text_split[1])
-                references=extractReferences(temp_text_split[1])
-
-            body=extractBody(temp_text_split[0])
-            info=extractInfo(temp_text_split[0])
-            title_dict, body_dict, info_dict, categories_dict,links_dict,references_dict,words=creating_dictionary(title, body, info, categories,links,references)
-            creating_inverted_index(title_dict, body_dict, info_dict, categories_dict,links_dict,references_dict,words)
-            
-            
-
-            SAXHandler.flag=0
-            self.curr=""
-            self.title = ""
-            self.text = ""
-            self.ID = ""
-
-
-
-
-
-if ( __name__ == "__main__"):
-
-    start = timeit.default_timer()
-    #Using SAX Parser to parse XML data...
-    # create an XMLReader
-    parser = xml.sax.make_parser()
-    # turn off namepsaces
-    parser.setFeature(xml.sax.handler.feature_namespaces, 0)
-
-    # override the default ContextHandler
-    Handler = SAXHandler()
-    parser.setContentHandler( Handler )
-
-    #    parser.parse(sys.argv[1])
-    for file in os.listdir("./Folder"):
-        # print(file)
-        try:
-            parser.parse("./Folder/"+file)
-        except:
-            pass
-    
-    try:
-        with open('./files/fileNumbers.txt', 'w') as f:
-            f.write(str(pages))
-    except:
-        os.mkdir('files')
-        with open('./files/fileNumbers.txt', 'w') as f:
-            f.write(str(pages))
-    offset = writeIntoFile(inverted_index, files,dictionary,offset)
-    inverted_index = defaultdict(list)
-    dictionary = {}
-    files = files+1
-    merge(files)
-    stop = timeit.default_timer()
-    print (stop - start)
-
-
+if __name__ == '__main__':
+    ##### Store stop words in a dictionary
+    with open('./files/stopwords.txt', 'r') as file :
+    	stop_words = set(file.read().split('\n'))
+    stop_dict = defaultdict(int)
+    for word in stop_words:
+    	stop_dict[word] = 1
+    docID = {} ## {Doc id : Title}
+    p_cnt = 0 ### Page Count
+    f_cnt = 0 ### File Count
+    offset = 0 ## Offset
+    PostList = defaultdict(list)
+    ##### Initialise Porter Stemmer
+    #stemmer = PorterStemmer() 
+    stemmer = Stemmer.Stemmer('english')
+    ##### Begin Parsing
+    parser = Parser(sys.argv[1])
+    file_handler(PostList, docID,sys.argv[2])
+    with open('./files/fileNumbers.txt', 'w') as f:
+        f.write(str(p_cnt))
+    offset = writeinfile(PostList, docID, f_cnt , offset)
+    PostList = defaultdict(list)
+    docID = {}
+    f_cnt = f_cnt + 1
+    mergefiles(f_cnt)
