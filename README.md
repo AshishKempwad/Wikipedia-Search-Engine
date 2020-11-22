@@ -1,5 +1,3 @@
-# Wikipedia-Search-Engine
-A efficient and optimized search engine
 
 # Wikipedia-Search-Engine
 This repository consists of a search engine over the 63GB Wikipedia dump. The code consists of indexer.py and search.py. Both simple and multi field queries have been implemented. The search returns a ranked list of articles in real time.
