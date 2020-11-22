@@ -33,3 +33,7 @@ Now, run python3 search.py , wait for files to be loaded
 Now, input queries .
 For field queries give space separated in form of t:(title) b:(body) i:(infobox) c:category l:(links)
 Output shows top10 relevant documents.
+
+
+# Details about parsers:
+https://www.edureka.co/blog/parsing-xml-file-using-sax-parser/#:~:text=SAX%20Parser%20%E2%80%93%20SAX%20is%20an,acronym%20for%20Document%20Object%20Model.
